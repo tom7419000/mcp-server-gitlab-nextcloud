@@ -1,0 +1,21 @@
+{
+  "tools": {
+    "list_projects": true,
+    "list_branches": true,
+    "get_file": true,
+    "list_commits": true,
+    "list_merge_requests": true,
+    "get_merge_request_diff": true,
+    "search_code": true,
+    "get_repo_tree": true
+  },
+  "projects": [
+    { "id": 42, "path": "team/pizzagame", "branches": ["main", "develop"] },
+    { "id": 17, "path": "team/infra", "branches": null }
+  ],
+  "limits": {
+    "maxResponseBytes": 200000,
+    "maxCommitsPerRequest": 50,
+    "requestTimeoutMs": 10000
+  }
+}

@@ -1,0 +1,66 @@
+services:
+  gitlab-mcp:
+    build:
+      context: ./gitlab-mcp
+    image: gitlab-mcp:local
+    container_name: gitlab-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PERMISSIONS_FILE: /app/permissions.json
+    volumes:
+      - ./gitlab-mcp/permissions.json:/app/permissions.json:ro
+    ports:
+      # Bound to localhost only - nginx (running on the same host) proxies
+      # to this port. Not exposed directly on the LAN.
+      - "127.0.0.1:${GITLAB_MCP_PORT:-3001}:${GITLAB_MCP_PORT:-3001}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${GITLAB_MCP_PORT:-3001}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  nextcloud-mcp:
+    build:
+      context: ./nextcloud-mcp
+    image: nextcloud-mcp:local
+    container_name: nextcloud-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PERMISSIONS_FILE: /app/permissions.json
+    volumes:
+      - ./nextcloud-mcp/permissions.json:/app/permissions.json:ro
+    ports:
+      # Bound to localhost only - nginx (running on the same host) proxies
+      # to this port. Not exposed directly on the LAN.
+      - "127.0.0.1:${NEXTCLOUD_MCP_PORT:-3002}:${NEXTCLOUD_MCP_PORT:-3002}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${NEXTCLOUD_MCP_PORT:-3002}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
