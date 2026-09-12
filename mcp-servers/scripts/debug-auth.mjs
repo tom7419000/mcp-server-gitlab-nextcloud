@@ -49,6 +49,30 @@ function relevantHeaders(response) {
   return out;
 }
 
+/**
+ * `fetch` verwirft den `Authorization`-Header bei einem Redirect auf einen
+ * anderen Origin (Standardverhalten, kein Bug). Wird die Anfrage z.B. durch
+ * einen vorgeschalteten Reverse-Proxy (http→https, non-www→www) umgeleitet,
+ * kommt sie am eigentlichen Ziel ohne Header an - das ergibt exakt dieselbe
+ * 401-Fehlermeldung wie ein falsches Passwort. Diese Funktion macht das
+ * sichtbar, statt es zu verschweigen.
+ */
+function redirectWarning(response, requestedUrl) {
+  if (!response.redirected) {
+    return null;
+  }
+  const requestedOrigin = new URL(requestedUrl).origin;
+  const finalOrigin = new URL(response.url).origin;
+  if (finalOrigin !== requestedOrigin) {
+    return (
+      `Redirect erkannt: ${requestedOrigin} -> ${finalOrigin}. Der Authorization-Header wird von ` +
+      "fetch bei einem Origin-Wechsel verworfen - das kann allein die 401-Antwort erklären, unabhängig " +
+      "davon ob die Credentials korrekt sind. NEXTCLOUD_URL in .env auf die Ziel-Origin korrigieren."
+    );
+  }
+  return `Redirect erkannt (gleicher Origin, unkritisch): ${requestedUrl} -> ${response.url}.`;
+}
+
 async function runCheck(name, fn) {
   console.log(`\n=== ${name} ===`);
   try {
@@ -72,15 +96,18 @@ async function checkNextcloudWebdav(url, user, appPassword) {
     body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/></d:prop></d:propfind>`,
   });
   const ok = response.status === 207 || response.ok;
+  const redirect = redirectWarning(response, davUrl);
   return {
     ok,
     status: response.status,
     headers: relevantHeaders(response),
+    redirect,
     detail: ok ? null : await bodySnippet(response),
     diagnosis: ok
       ? "WebDAV-Login funktioniert - Basisauthentifizierung (Benutzer + App-Passwort) ist gültig."
       : response.status === 401
-        ? "401: Benutzername/App-Passwort werden von Nextcloud abgelehnt (falsch, abgelaufen oder widerrufen)."
+        ? "401: Benutzername/App-Passwort werden von Nextcloud abgelehnt (falsch, abgelaufen oder widerrufen)." +
+          (redirect ? " ACHTUNG: " + redirect : "")
         : `Unerwarteter Status ${response.status} - siehe Detail.`,
   };
 }
@@ -93,6 +120,7 @@ async function checkNextcloudDeck(url, user, appPassword) {
     headers: { Authorization: authHeader, "OCS-APIRequest": "true", Accept: "application/json" },
   });
   const ok = response.ok;
+  const redirect = redirectWarning(response, deckUrl);
   let boardCount = null;
   if (ok) {
     try {
@@ -106,13 +134,15 @@ async function checkNextcloudDeck(url, user, appPassword) {
     ok,
     status: response.status,
     headers: relevantHeaders(response),
+    redirect,
     detail: ok ? (boardCount !== null ? `${boardCount} Board(s) sichtbar` : null) : await bodySnippet(response),
     diagnosis: ok
       ? "Deck-API-Login funktioniert."
       : response.status === 401
         ? "401: Gleiche Credentials wie WebDAV, aber Deck lehnt ab - vergleiche mit dem WebDAV-Check oben. " +
           "Beide 401 ⇒ Credential generell ungültig. Nur Deck 401 ⇒ Deck-spezifisches Problem " +
-          "(App evtl. deaktiviert, oder Nextcloud-App-Passwort mit eingeschränkten App-Scopes)."
+          "(App evtl. deaktiviert, oder Nextcloud-App-Passwort mit eingeschränkten App-Scopes)." +
+          (redirect ? " ACHTUNG: " + redirect : "")
         : response.status === 404
           ? "404: Deck-App ist auf dieser Nextcloud-Instanz vermutlich nicht installiert/aktiviert."
           : `Unerwarteter Status ${response.status} - siehe Detail.`,
@@ -179,6 +209,28 @@ async function checkGitlabProjects(url, token) {
   };
 }
 
+/**
+ * Klassisches Copy-Paste-Artefakt: ein Wert wurde mit einem führenden/
+ * nachgestellten Whitespace oder einem \r (Windows-Zeilenumbruch) in .env
+ * eingefügt. Für Basic-Auth ist "app-password " ein anderes Passwort als
+ * "app-password" - das ergibt dieselbe 401-Antwort wie ein echter Tippfehler,
+ * ist aber unsichtbar beim bloßen Ansehen der Datei. Der Wert selbst wird nie
+ * geloggt, nur seine Länge und ob er "sauber" ist.
+ */
+function hygieneWarning(name, rawValue) {
+  if (rawValue === undefined) return null;
+  const hasCr = rawValue.includes("\r");
+  const trimmed = rawValue.trim();
+  if (!hasCr && trimmed === rawValue) {
+    return null;
+  }
+  return (
+    `${name}: Rohwert (${rawValue.length} Zeichen) unterscheidet sich vom getrimmten Wert ` +
+    `(${trimmed.length} Zeichen)${hasCr ? " und enthält ein \\r (Windows-Zeilenumbruch)" : ""} - ` +
+    "vermutlich ein Copy-Paste-Artefakt in .env. Wert dort ohne führende/nachgestellte Whitespaces neu eintragen."
+  );
+}
+
 async function main() {
   const nextcloudUrl = requireEnv("NEXTCLOUD_URL");
   const nextcloudUser = requireEnv("NEXTCLOUD_USER");
@@ -195,6 +247,18 @@ async function main() {
       "\nBitte mit geladener .env starten, z.B.: node --env-file=.env scripts/debug-auth.mjs (aus mcp-servers/)",
     );
     process.exit(1);
+  }
+
+  const hygieneWarnings = [
+    hygieneWarning("NEXTCLOUD_USER", nextcloudUser.value),
+    hygieneWarning("NEXTCLOUD_APP_PASSWORD", nextcloudAppPassword.value),
+    hygieneWarning("GITLAB_TOKEN", gitlabToken.value),
+  ].filter(Boolean);
+  if (hygieneWarnings.length > 0) {
+    console.log("\n=== Werte-Hygiene ===");
+    for (const warning of hygieneWarnings) {
+      console.log(`  ACHTUNG: ${warning}`);
+    }
   }
 
   const results = [];
@@ -217,6 +281,7 @@ async function main() {
 
   const report = {
     generatedAt: new Date().toISOString(),
+    hygieneWarnings,
     checks: results,
   };
   await writeFile(REPORT_PATH, JSON.stringify(report, null, 2), "utf8");
