@@ -11,9 +11,11 @@ const ProjectPermissionSchema = z
     message: "Jeder Eintrag unter 'projects' braucht mindestens 'id' oder 'path'.",
   });
 
+const ProjectsFieldSchema = z.union([z.literal("*"), z.array(ProjectPermissionSchema)]).default([]);
+
 const PermissionsSchema = z.object({
   tools: z.record(z.string(), z.boolean()).default({}),
-  projects: z.array(ProjectPermissionSchema).default([]),
+  projects: ProjectsFieldSchema,
   limits: z
     .object({
       maxResponseBytes: z.number().int().positive().default(200_000),

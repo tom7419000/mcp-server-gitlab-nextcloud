@@ -210,6 +210,37 @@ Oder direkt in einer `.mcp.json`:
 - `paths` müssen mit `/` beginnen; Zugriff ist auf diese Pfade und alle Unterpfade beschränkt.
 - `deckBoards` ist eine Liste erlaubter Board-IDs (Zahl, sichtbar in der Deck-URL).
 
+## Wildcard-Scope (alle Projekte/Ordner/Boards)
+
+Statt jedes Projekt/jeden Pfad/jedes Board einzeln einzutragen, kann `projects` (gitlab-mcp) bzw.
+`paths`/`deckBoards` (nextcloud-mcp) auf das Literal `"*"` gesetzt werden. Die Zugriffsgrenze
+verschiebt sich dann von `permissions.json` auf die vom jeweiligen Dienst selbst durchgesetzte
+Sichtbarkeit - neue Projekte/Ordner/Boards sind ohne Config-Änderung sofort nutzbar, sobald sie
+dort freigegeben werden:
+
+- **gitlab-mcp**: `"projects": "*"` erlaubt alle Projekte, bei denen der Token-Owner **Mitglied**
+  ist (`GET /projects?membership=true`), inkl. aller Branches. Empfehlung: einen eigenen
+  GitLab-Benutzer/Token anlegen, der nur zu den gewünschten Projekten hinzugefügt wird - die
+  Mitgliedschaft dort ist dann die eigentliche Access-Control.
+- **nextcloud-mcp**: `"paths": "*"` erlaubt den kompletten für den App-Passwort-Benutzer
+  sichtbaren Dateibaum, `"deckBoards": "*"` alle für ihn sichtbaren Deck-Boards. Die eigentliche
+  Grenze ist dann, was diesem dedizierten Nextcloud-Benutzer freigegeben wurde (Datei-Freigaben
+  bzw. Deck-Board-Mitgliedschaft) - genau das in der Frage beschriebene Setup mit einem eigenen
+  Nextcloud-Benutzer.
+
+Beide Felder sind unabhängig voneinander wählbar (z.B. `projects: "*"`, aber `paths` weiterhin
+als explizite Liste). Der Path-Traversal-Schutz bei nextcloud-mcp bleibt auch im Wildcard-Modus
+aktiv. Beispiel-Configs: [`gitlab-mcp/permissions.wildcard.example.json`](./gitlab-mcp/permissions.wildcard.example.json),
+[`nextcloud-mcp/permissions.wildcard.example.json`](./nextcloud-mcp/permissions.wildcard.example.json).
+
+```json
+{ "projects": "*" }
+```
+
+```json
+{ "paths": "*", "deckBoards": "*" }
+```
+
 ## Token-Rotation
 
 PAT (GitLab) und App-Passwort (Nextcloud) laufen irgendwann ab oder werden bewusst rotiert:

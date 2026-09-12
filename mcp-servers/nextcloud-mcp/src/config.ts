@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 
+const PathsFieldSchema = z
+  .union([z.literal("*"), z.array(z.string().min(1).startsWith("/", { message: "Pfade müssen mit '/' beginnen" }))])
+  .default([]);
+const DeckBoardsFieldSchema = z.union([z.literal("*"), z.array(z.number().int().positive())]).default([]);
+
 const PermissionsSchema = z.object({
   tools: z.record(z.string(), z.boolean()).default({}),
-  paths: z.array(z.string().min(1).startsWith("/", { message: "Pfade müssen mit '/' beginnen" })).default([]),
-  deckBoards: z.array(z.number().int().positive()).default([]),
+  paths: PathsFieldSchema,
+  deckBoards: DeckBoardsFieldSchema,
   limits: z
     .object({
       maxResponseBytes: z.number().int().positive().default(500_000),
@@ -55,7 +60,11 @@ function loadPermissions(filePath: string): PermissionsConfig {
   }
 
   // Normalisiere konfigurierte Pfade einmalig, damit die Whitelist-Checks zur
-  // Laufzeit nur noch normalisierte Strings vergleichen müssen.
+  // Laufzeit nur noch normalisierte Strings vergleichen müssen. Im
+  // Wildcard-Modus ("*") gibt es keine Liste zu normalisieren.
+  if (result.data.paths === "*") {
+    return result.data;
+  }
   const normalizedPaths = result.data.paths.map((p) => p.replace(/\/+$/, "") || "/");
   return { ...result.data, paths: normalizedPaths };
 }

@@ -23,10 +23,35 @@ export function registerListProjects(server: McpServer, ctx: ToolContext): void 
     {
       title: "GitLab-Projekte auflisten",
       description:
-        "Listet die für diesen MCP-Server freigegebenen GitLab-Projekte auf (nur die in der Permission-Config whitelisteten Projekte, nicht alle für das Token sichtbaren Projekte).",
+        "Listet die für diesen MCP-Server freigegebenen GitLab-Projekte auf. Im Wildcard-Modus " +
+        "(projects: \"*\") sind das alle Projekte, bei denen der Token-Owner Mitglied ist; sonst nur " +
+        "die explizit in der Permission-Config whitelisteten Projekte.",
       inputSchema: {},
     },
     withLogging<Record<string, never>>(TOOL_NAME, async () => {
+      if (ctx.permissions.isWildcardProjects()) {
+        const projects = await ctx.gitlab.getJson<GitlabProject[]>("/projects", {
+          membership: "true",
+          simple: "true",
+          per_page: 100,
+        });
+        const details = projects.map((data) => ({
+          id: data.id,
+          path: data.path_with_namespace,
+          description: data.description,
+          defaultBranch: data.default_branch,
+          webUrl: data.web_url,
+          allowedBranches: null,
+        }));
+        if (details.length === 100) {
+          return jsonResult(
+            { projects: details, note: "Ggf. weitere Projekte vorhanden (Ergebnis bei 100 Treffern gedeckelt)." },
+            ctx.limits.maxResponseBytes,
+          );
+        }
+        return jsonResult({ projects: details }, ctx.limits.maxResponseBytes);
+      }
+
       const configuredProjects = ctx.permissions.listConfiguredProjects();
       const details = await Promise.all(
         configuredProjects.map(async (project) => {

@@ -53,7 +53,8 @@ function bootstrap() {
     port: config.port,
     gitlabUrl: config.gitlabUrl,
     enabledTools,
-    configuredProjects: config.permissions.projects.length,
+    configuredProjects:
+      config.permissions.projects === "*" ? "*" : config.permissions.projects.length,
   });
 
   const app = express();

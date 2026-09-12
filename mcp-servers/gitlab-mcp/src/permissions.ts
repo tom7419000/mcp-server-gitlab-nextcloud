@@ -25,14 +25,27 @@ export class PermissionEngine {
     return this.config.tools[name] === true;
   }
 
-  /** Read-only view of the whitelisted projects, e.g. for the list_projects tool. */
+  /** True if `projects` is set to the wildcard "*" instead of an explicit list. */
+  isWildcardProjects(): boolean {
+    return this.config.projects === "*";
+  }
+
+  /** Read-only view of the whitelisted projects, e.g. for the list_projects tool. Empty in wildcard mode. */
   listConfiguredProjects(): readonly ProjectPermission[] {
-    return this.config.projects;
+    return this.config.projects === "*" ? [] : this.config.projects;
   }
 
   private findProject(identifier: string): ProjectPermission | undefined {
     const asNumber = Number(identifier);
     const isNumeric = identifier.trim() !== "" && Number.isFinite(asNumber);
+
+    if (this.config.projects === "*") {
+      // Wildcard mode: trust GitLab's own membership/visibility rules for
+      // this identifier instead of a static list. The actual GET request
+      // that follows will 403/404 if the token has no access here.
+      return isNumeric ? { id: asNumber, branches: null } : { path: identifier, branches: null };
+    }
+
     return this.config.projects.find((project) => {
       if (isNumeric && project.id === asNumber) {
         return true;

@@ -61,8 +61,8 @@ function bootstrap() {
     port: config.port,
     nextcloudUrl: config.nextcloudUrl,
     enabledTools,
-    allowedPaths: config.permissions.paths.length,
-    allowedBoards: config.permissions.deckBoards.length,
+    allowedPaths: config.permissions.paths === "*" ? "*" : config.permissions.paths.length,
+    allowedBoards: config.permissions.deckBoards === "*" ? "*" : config.permissions.deckBoards.length,
   });
 
   const app = express();

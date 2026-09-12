@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolContext } from "../tool-context.js";
 import { jsonResult, withLogging } from "../tool-helpers.js";
-import { extractCardsFromStack, summarizeCard, summarizeStack } from "../deck-format.js";
+import { extractCardsFromStack, summarizeBoard, summarizeCard, summarizeStack } from "../deck-format.js";
 import { logger } from "../logging.js";
 
 const TOOL_NAME = "deck_search_cards";
@@ -35,7 +35,17 @@ export function registerDeckSearchCards(server: McpServer, ctx: ToolContext): vo
       const matches: Array<Record<string, unknown>> = [];
       let truncated = false;
 
-      for (const boardId of ctx.permissions.listAllowedBoards()) {
+      let boardIds: readonly number[];
+      if (ctx.permissions.isWildcardBoards()) {
+        const boards = await ctx.deck.listBoards();
+        boardIds = boards
+          .map((b) => summarizeBoard(b).id)
+          .filter((id): id is number => typeof id === "number");
+      } else {
+        boardIds = ctx.permissions.listAllowedBoards();
+      }
+
+      for (const boardId of boardIds) {
         if (matches.length >= MAX_MATCHES) {
           truncated = true;
           break;

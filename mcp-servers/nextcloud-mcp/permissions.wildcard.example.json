@@ -1,0 +1,18 @@
+{
+  "tools": {
+    "list_files": true,
+    "read_file": true,
+    "search_files": true,
+    "deck_list_boards": true,
+    "deck_list_stacks": true,
+    "deck_list_cards": true,
+    "deck_get_card": true,
+    "deck_search_cards": true
+  },
+  "paths": "*",
+  "deckBoards": "*",
+  "limits": {
+    "maxResponseBytes": 500000,
+    "requestTimeoutMs": 10000
+  }
+}

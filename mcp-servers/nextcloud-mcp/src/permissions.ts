@@ -30,16 +30,28 @@ export class PermissionEngine {
     return this.config.tools[name] === true;
   }
 
-  listAllowedPaths(): readonly string[] {
-    return this.config.paths;
+  /** True if `paths` is set to the wildcard "*" instead of an explicit list. */
+  isWildcardPaths(): boolean {
+    return this.config.paths === "*";
   }
 
+  /** True if `deckBoards` is set to the wildcard "*" instead of an explicit list. */
+  isWildcardBoards(): boolean {
+    return this.config.deckBoards === "*";
+  }
+
+  /** Read-only view of the whitelisted paths, e.g. for search_files. Empty in wildcard mode. */
+  listAllowedPaths(): readonly string[] {
+    return this.config.paths === "*" ? [] : this.config.paths;
+  }
+
+  /** Read-only view of the whitelisted board IDs, e.g. for deck_search_cards. Empty in wildcard mode. */
   listAllowedBoards(): readonly number[] {
-    return this.config.deckBoards;
+    return this.config.deckBoards === "*" ? [] : this.config.deckBoards;
   }
 
   isBoardAllowed(boardId: number): boolean {
-    return this.config.deckBoards.includes(boardId);
+    return this.config.deckBoards === "*" || this.config.deckBoards.includes(boardId);
   }
 
   assertBoardAllowed(boardId: number): void {
@@ -73,9 +85,9 @@ export class PermissionEngine {
       throw new PermissionDeniedError();
     }
 
-    const isAllowed = this.config.paths.some(
-      (allowed) => normalized === allowed || normalized.startsWith(`${allowed}/`),
-    );
+    const isAllowed =
+      this.config.paths === "*" ||
+      this.config.paths.some((allowed) => normalized === allowed || normalized.startsWith(`${allowed}/`));
 
     if (!isAllowed) {
       logger.warn("permission_denied", { scope: "path" });

@@ -18,9 +18,16 @@ export function registerDeckListBoards(server: McpServer, ctx: ToolContext): voi
       inputSchema: {},
     },
     withLogging<Record<string, never>>(TOOL_NAME, async () => {
-      const allowedBoards = new Set(ctx.permissions.listAllowedBoards());
       const boards = await ctx.deck.listBoards();
 
+      if (ctx.permissions.isWildcardBoards()) {
+        return jsonResult(
+          boards.map((b) => summarizeBoard(b)),
+          ctx.limits.maxResponseBytes,
+        );
+      }
+
+      const allowedBoards = new Set(ctx.permissions.listAllowedBoards());
       const visible = boards
         .map((b) => summarizeBoard(b))
         .filter((b) => typeof b.id === "number" && allowedBoards.has(b.id as number));

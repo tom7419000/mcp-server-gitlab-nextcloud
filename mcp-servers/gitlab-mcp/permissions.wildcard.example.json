@@ -1,0 +1,18 @@
+{
+  "tools": {
+    "list_projects": true,
+    "list_branches": true,
+    "get_file": true,
+    "list_commits": true,
+    "list_merge_requests": true,
+    "get_merge_request_diff": true,
+    "search_code": true,
+    "get_repo_tree": true
+  },
+  "projects": "*",
+  "limits": {
+    "maxResponseBytes": 200000,
+    "maxCommitsPerRequest": 50,
+    "requestTimeoutMs": 10000
+  }
+}

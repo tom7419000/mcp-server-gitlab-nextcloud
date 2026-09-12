@@ -81,7 +81,7 @@ export function registerSearchFiles(server: McpServer, ctx: ToolContext): void {
       inputSchema: inputShape,
     },
     withLogging(TOOL_NAME, async (args: Input) => {
-      const allowedPaths = ctx.permissions.listAllowedPaths();
+      const allowedPaths = ctx.permissions.isWildcardPaths() ? ["/"] : ctx.permissions.listAllowedPaths();
       let cappedOverall = false;
       const allMatches: MatchEntry[] = [];
 
