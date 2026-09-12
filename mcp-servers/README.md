@@ -276,3 +276,20 @@ npm run typecheck
 npm run build
 PERMISSIONS_FILE=./permissions.json npm start
 ```
+
+## Troubleshooting: Auth-Fehler diagnostizieren
+
+Bei `401`-Fehlern von Nextcloud oder `404`-Fehlern von GitLab (Projekt nicht gefunden) hilft das
+Diagnose-Skript [`scripts/debug-auth.mjs`](./scripts/debug-auth.mjs), um Credential- von
+Konfigurationsproblemen zu unterscheiden - es spricht dieselben Endpunkte mit demselben
+Auth-Header-Aufbau an wie die MCP-Server selbst, aber direkt ohne Docker/MCP-Handshake:
+
+```bash
+cd mcp-servers
+node --env-file=.env scripts/debug-auth.mjs
+```
+
+Prüft: Nextcloud WebDAV-Login, Nextcloud Deck-API-Login, GitLab-Token-Gültigkeit und listet alle
+GitLab-Projekte auf, bei denen der Token Mitglied ist (inkl. echtem `path_with_namespace` - nützlich,
+um den korrekten Projekt-Pfad für `permissions.json` zu finden). Schreibt einen strukturierten
+Report nach `scripts/debug-report.json` (lokal, nie committet).

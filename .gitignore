@@ -8,5 +8,6 @@ npm-debug.log*
 .env.local
 mcp-servers/gitlab-mcp/permissions.json
 mcp-servers/nextcloud-mcp/permissions.json
+mcp-servers/scripts/debug-report.json
 
 .DS_Store
