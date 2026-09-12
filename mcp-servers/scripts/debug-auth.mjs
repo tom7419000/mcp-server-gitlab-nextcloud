@@ -57,6 +57,33 @@ function relevantHeaders(response) {
  * 401-Fehlermeldung wie ein falsches Passwort. Diese Funktion macht das
  * sichtbar, statt es zu verschweigen.
  */
+const SLOW_RESPONSE_THRESHOLD_MS = 1500;
+
+/** Wraps fetch to measure round-trip time - needed to spot bruteforce throttling below. */
+async function timedFetch(url, options) {
+  const start = Date.now();
+  const response = await fetch(url, options);
+  return { response, durationMs: Date.now() - start };
+}
+
+/**
+ * Nextclouds Bruteforce-Schutz verzögert Antworten auf wiederholte Fehlversuche derselben
+ * IP/User-Kombination bewusst (wachsender Delay), bevor er denselben generischen 401 liefert wie
+ * ein echter Credential-Fehler - für den Client nicht zu unterscheiden außer über die Latenz. Eine
+ * sofortige 401-Antwort ist dagegen ein normaler Auth-Fehler.
+ */
+function latencyWarning(status, durationMs) {
+  if (status !== 401 || durationMs < SLOW_RESPONSE_THRESHOLD_MS) {
+    return null;
+  }
+  return (
+    `Ungewöhnlich langsame 401-Antwort (${durationMs}ms) - Hinweis auf serverseitiges ` +
+    "Bruteforce-Throttling statt eines echten Credential-Fehlers, wenn genug Fehlversuche von " +
+    "dieser IP/diesem Benutzer vorausgingen. IP-Bann serverseitig prüfen/zurücksetzen statt " +
+    "weiter am Passwort zu zweifeln."
+  );
+}
+
 function redirectWarning(response, requestedUrl) {
   if (!response.redirected) {
     return null;
@@ -77,7 +104,7 @@ async function runCheck(name, fn) {
   console.log(`\n=== ${name} ===`);
   try {
     const result = await fn();
-    console.log(`  Status: ${result.status}`);
+    console.log(`  Status: ${result.status}${result.durationMs !== undefined ? ` (${result.durationMs}ms)` : ""}`);
     console.log(`  Diagnose: ${result.diagnosis}`);
     if (result.detail) console.log(`  Detail: ${result.detail}`);
     return { name, ...result };
@@ -90,16 +117,18 @@ async function runCheck(name, fn) {
 async function checkNextcloudWebdav(url, user, appPassword) {
   const authHeader = `Basic ${Buffer.from(`${user}:${appPassword}`).toString("base64")}`;
   const davUrl = `${url.replace(/\/+$/, "")}/remote.php/dav/files/${encodeURIComponent(user)}/`;
-  const response = await fetch(davUrl, {
+  const { response, durationMs } = await timedFetch(davUrl, {
     method: "PROPFIND",
     headers: { Authorization: authHeader, Depth: "0", "Content-Type": "application/xml; charset=utf-8" },
     body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/></d:prop></d:propfind>`,
   });
   const ok = response.status === 207 || response.ok;
   const redirect = redirectWarning(response, davUrl);
+  const latency = latencyWarning(response.status, durationMs);
   return {
     ok,
     status: response.status,
+    durationMs,
     headers: relevantHeaders(response),
     redirect,
     detail: ok ? null : await bodySnippet(response),
@@ -107,7 +136,8 @@ async function checkNextcloudWebdav(url, user, appPassword) {
       ? "WebDAV-Login funktioniert - Basisauthentifizierung (Benutzer + App-Passwort) ist gültig."
       : response.status === 401
         ? "401: Benutzername/App-Passwort werden von Nextcloud abgelehnt (falsch, abgelaufen oder widerrufen)." +
-          (redirect ? " ACHTUNG: " + redirect : "")
+          (redirect ? " ACHTUNG: " + redirect : "") +
+          (latency ? " ACHTUNG: " + latency : "")
         : `Unerwarteter Status ${response.status} - siehe Detail.`,
   };
 }
@@ -115,12 +145,13 @@ async function checkNextcloudWebdav(url, user, appPassword) {
 async function checkNextcloudDeck(url, user, appPassword) {
   const authHeader = `Basic ${Buffer.from(`${user}:${appPassword}`).toString("base64")}`;
   const deckUrl = `${url.replace(/\/+$/, "")}/index.php/apps/deck/api/v1.0/boards`;
-  const response = await fetch(deckUrl, {
+  const { response, durationMs } = await timedFetch(deckUrl, {
     method: "GET",
     headers: { Authorization: authHeader, "OCS-APIRequest": "true", Accept: "application/json" },
   });
   const ok = response.ok;
   const redirect = redirectWarning(response, deckUrl);
+  const latency = latencyWarning(response.status, durationMs);
   let boardCount = null;
   if (ok) {
     try {
@@ -133,6 +164,7 @@ async function checkNextcloudDeck(url, user, appPassword) {
   return {
     ok,
     status: response.status,
+    durationMs,
     headers: relevantHeaders(response),
     redirect,
     detail: ok ? (boardCount !== null ? `${boardCount} Board(s) sichtbar` : null) : await bodySnippet(response),
@@ -142,7 +174,8 @@ async function checkNextcloudDeck(url, user, appPassword) {
         ? "401: Gleiche Credentials wie WebDAV, aber Deck lehnt ab - vergleiche mit dem WebDAV-Check oben. " +
           "Beide 401 ⇒ Credential generell ungültig. Nur Deck 401 ⇒ Deck-spezifisches Problem " +
           "(App evtl. deaktiviert, oder Nextcloud-App-Passwort mit eingeschränkten App-Scopes)." +
-          (redirect ? " ACHTUNG: " + redirect : "")
+          (redirect ? " ACHTUNG: " + redirect : "") +
+          (latency ? " ACHTUNG: " + latency : "")
         : response.status === 404
           ? "404: Deck-App ist auf dieser Nextcloud-Instanz vermutlich nicht installiert/aktiviert."
           : `Unerwarteter Status ${response.status} - siehe Detail.`,
@@ -150,10 +183,11 @@ async function checkNextcloudDeck(url, user, appPassword) {
 }
 
 async function checkGitlabToken(url, token) {
-  const response = await fetch(`${url.replace(/\/+$/, "")}/api/v4/user`, {
+  const { response, durationMs } = await timedFetch(`${url.replace(/\/+$/, "")}/api/v4/user`, {
     headers: { "PRIVATE-TOKEN": token, Accept: "application/json" },
   });
   const ok = response.ok;
+  const latency = latencyWarning(response.status, durationMs);
   let username = null;
   if (ok) {
     try {
@@ -166,18 +200,19 @@ async function checkGitlabToken(url, token) {
   return {
     ok,
     status: response.status,
+    durationMs,
     headers: relevantHeaders(response),
     detail: ok ? (username ? `Token gehört zu Benutzer: ${username}` : null) : await bodySnippet(response),
     diagnosis: ok
       ? "GitLab-Token ist gültig."
       : response.status === 401
-        ? "401: Token ungültig, abgelaufen oder widerrufen."
+        ? "401: Token ungültig, abgelaufen oder widerrufen." + (latency ? " ACHTUNG: " + latency : "")
         : `Unerwarteter Status ${response.status} - siehe Detail.`,
   };
 }
 
 async function checkGitlabProjects(url, token) {
-  const response = await fetch(
+  const { response, durationMs } = await timedFetch(
     `${url.replace(/\/+$/, "")}/api/v4/projects?membership=true&per_page=100&simple=true`,
     { headers: { "PRIVATE-TOKEN": token, Accept: "application/json" } },
   );
@@ -196,6 +231,7 @@ async function checkGitlabProjects(url, token) {
   return {
     ok,
     status: response.status,
+    durationMs,
     headers: relevantHeaders(response),
     projects,
     detail: ok
